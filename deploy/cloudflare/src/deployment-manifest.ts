@@ -40,6 +40,7 @@ export interface CloudflareDeploymentManifest {
     readonly ARTIFACT_SERVER_ORIGIN: string;
     readonly ARTIFACT_SERVER_CONTENT_DOMAIN: string;
     readonly ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL: string;
+    ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS?: string;
     readonly ARTIFACT_SERVER_HOST: "0.0.0.0";
     readonly ARTIFACT_SERVER_PORT: 8787;
     readonly ARTIFACT_SERVER_REQUEST_LOG_SAMPLE_RATE: number;
@@ -52,6 +53,26 @@ export interface CloudflareDeploymentManifest {
 export const buildCloudflareDeploymentManifest = (
   input: CloudflareDeploymentInput,
 ): CloudflareDeploymentManifest => {
+  const runtimeConfiguration: CloudflareDeploymentManifest["runtimeConfiguration"] = {
+    ARTIFACT_SERVER_ORIGIN: `https://${input.applicationDomain}`,
+    ARTIFACT_SERVER_CONTENT_DOMAIN: input.contentDomain,
+    ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL:
+      input.bootstrapAdministratorEmail,
+    ARTIFACT_SERVER_HOST: "0.0.0.0",
+    ARTIFACT_SERVER_PORT: 8787,
+    ARTIFACT_SERVER_REQUEST_LOG_SAMPLE_RATE:
+      input.requestLogSampleRate ?? 0.01,
+    ARTIFACT_SERVER_READINESS_WITHDRAWAL_MS: 1000,
+    ARTIFACT_SERVER_SHUTDOWN_DEADLINE_MS: 10000,
+    ARTIFACT_SERVER_OBJECT_STORAGE_PROVIDER: "r2",
+  };
+  if (
+    input.autoAdmitEmailDomains !== undefined &&
+    input.autoAdmitEmailDomains.length > 0
+  ) {
+    runtimeConfiguration.ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS =
+      input.autoAdmitEmailDomains.join(",");
+  }
   const applicationName = input.stage.startsWith("probe-")
     ? "probe-artifact-server"
     : "artifact-server";
@@ -88,18 +109,6 @@ export const buildCloudflareDeploymentManifest = (
     workerTags: Object.entries(requiredTags)
       .toSorted(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => `${key}:${value}`),
-    runtimeConfiguration: {
-      ARTIFACT_SERVER_ORIGIN: `https://${input.applicationDomain}`,
-      ARTIFACT_SERVER_CONTENT_DOMAIN: input.contentDomain,
-      ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL:
-        input.bootstrapAdministratorEmail,
-      ARTIFACT_SERVER_HOST: "0.0.0.0",
-      ARTIFACT_SERVER_PORT: 8787,
-      ARTIFACT_SERVER_REQUEST_LOG_SAMPLE_RATE:
-        input.requestLogSampleRate ?? 0.01,
-      ARTIFACT_SERVER_READINESS_WITHDRAWAL_MS: 1000,
-      ARTIFACT_SERVER_SHUTDOWN_DEADLINE_MS: 10000,
-      ARTIFACT_SERVER_OBJECT_STORAGE_PROVIDER: "r2",
-    },
+    runtimeConfiguration,
   };
 };

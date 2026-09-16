@@ -170,6 +170,12 @@ export interface InstallationAccessDependencies {
    * another process may authenticate here for at most the TTL.
    */
   readonly authenticationCache?: AuthenticationCachePolicy | null;
+  /**
+   * Verified email domains whose external logins are admitted as members
+   * without a prior administrator action. Empty or absent keeps the closed
+   * installation behaviour: only pre-admitted people may sign in.
+   */
+  readonly autoAdmitEmailDomains?: ReadonlyArray<string> | undefined;
   readonly bootstrapAdministratorEmail: string;
   readonly clock: {readonly now: () => Date};
   readonly ids: IdentityIdProvider;
@@ -466,9 +472,11 @@ function makeInstallationAccessService(
       const bootstrapAdministratorEmail = yield* normalizeEmail(
         dependencies.bootstrapAdministratorEmail,
       );
+      const isBootstrapAdministrator = !hasMembers &&
+        email === bootstrapAdministratorEmail;
       if (
-        hasMembers ||
-        email !== bootstrapAdministratorEmail
+        !isBootstrapAdministrator &&
+        !emailDomainIsAutoAdmitted(email, dependencies.autoAdmitEmailDomains)
       ) {
         return yield* Effect.fail(new IdentityAdmissionDenied({
           message: "This person has not been admitted to the Artifact Server.",
@@ -480,7 +488,9 @@ function makeInstallationAccessService(
         email,
         id: dependencies.ids.memberId(),
         installationId: dependencies.installationId,
-        role: membershipRoles.administrator,
+        role: isBootstrapAdministrator
+          ? membershipRoles.administrator
+          : membershipRoles.member,
       });
     }
     yield* dependencies.repository.bindExternalIdentity({
@@ -810,6 +820,17 @@ function invalidApiKey(): Effect.Effect<never, AuthenticationRequired> {
     message: "A valid Artifact Server API key is required.",
   }));
 }
+
+const emailDomainIsAutoAdmitted = (
+  normalizedEmail: string,
+  domains: ReadonlyArray<string> | undefined,
+): boolean => {
+  if (domains === undefined || domains.length === 0) return false;
+  const domain = normalizedEmail.slice(normalizedEmail.lastIndexOf("@") + 1);
+  return domains.some(
+    (candidate) => candidate.trim().toLocaleLowerCase("en-US") === domain,
+  );
+};
 
 const normalizeEmail = Effect.fn("InstallationAccessService.normalizeEmail")(
   function*(value: string): Effect.fn.Return<string, IdentityConflict> {

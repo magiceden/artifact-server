@@ -83,6 +83,7 @@ export async function startTestServer(
   installation: TestInstallation,
   options: {
     readonly applicationOrigin?: string;
+    readonly autoAdmitEmailDomains?: ReadonlyArray<string> | undefined;
     readonly bootstrapAdministratorEmail?: string;
     readonly browserAccess?: BrowserAccess;
     readonly contentDomain?: string;
@@ -108,6 +109,7 @@ export async function startTestServer(
 ): Promise<RunningTestServer> {
   const baseConfig: LocalServerConfig = {
     apiToken: installation.apiToken,
+    autoAdmitEmailDomains: options.autoAdmitEmailDomains,
     browserAccess: options.browserAccess ?? localOwnerBrowserAccess,
     bootstrapAdministratorEmail: options.bootstrapAdministratorEmail ??
       "administrator@example.test",

@@ -1,5 +1,8 @@
 {
   "applicationDomain": "artifacts.example.com",
+  "autoAdmitEmailDomains": [
+    "example.com"
+  ],
   "backupRetentionDays": 7,
   "bootstrapAdministratorEmail": "administrator@example.com",
   "capacity": {

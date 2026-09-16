@@ -82,6 +82,7 @@ export interface LocalRuntimeConfig {
   readonly apiToken: string;
   readonly apiOAuthResource?: ApiOAuthResourceConfiguration;
   readonly applicationOrigin?: string;
+  readonly autoAdmitEmailDomains?: ReadonlyArray<string> | undefined;
   readonly bootstrapAdministratorEmail?: string;
   readonly browserAccess: BrowserAccess;
   readonly clock?: Clock;
@@ -215,6 +216,7 @@ export async function createLocalRuntime(
     apiToken: config.browserAccess.mode === browserAccessModes.localOwner
       ? apiToken
       : null,
+    autoAdmitEmailDomains: config.autoAdmitEmailDomains,
     blobs,
     bootstrapAdministratorEmail: config.bootstrapAdministratorEmail ??
       "local-administrator@artifactserver.invalid",
