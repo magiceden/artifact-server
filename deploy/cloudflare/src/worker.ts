@@ -51,6 +51,7 @@ export interface WorkerEnvironment {
   readonly ASSETS: Fetcher;
   readonly ARTIFACTS?: ArtifactsBinding;
   readonly ARTIFACT_SERVER_API_TOKEN: string;
+  readonly ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS?: string;
   readonly ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL: string;
   readonly ARTIFACT_SERVER_CONTENT_DOMAIN: string;
   readonly ARTIFACT_SERVER_CLOUDFLARE_ARTIFACTS_ACCOUNT_ID?: string;
@@ -169,6 +170,9 @@ async function createCloudflareRuntime(
     apiToken: Redacted.make(environment.ARTIFACT_SERVER_API_TOKEN, {
       label: "cloudflare-api-token",
     }),
+    autoAdmitEmailDomains: parseAutoAdmitEmailDomains(
+      environment.ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS,
+    ),
     blobs,
     bootstrapAdministratorEmail:
       environment.ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL,
@@ -511,6 +515,17 @@ async function readinessComponent(
       status: "unavailable",
     };
   }
+}
+
+function parseAutoAdmitEmailDomains(
+  value: string | undefined,
+): ReadonlyArray<string> | undefined {
+  if (value === undefined) return undefined;
+  const domains = value
+    .split(",")
+    .map((domain) => domain.trim().toLocaleLowerCase("en-US"))
+    .filter((domain) => domain.length > 0);
+  return domains.length > 0 ? domains : undefined;
 }
 
 function requestLogSampleRate(environment: WorkerEnvironment): number {

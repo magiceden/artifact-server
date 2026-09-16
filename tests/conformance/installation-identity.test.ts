@@ -829,6 +829,79 @@ describe("installation identity and access", () => {
     expect(await bearerStatus(server, installation.apiToken)).toBe(401);
   });
 
+  test("external login auto-admits verified emails from configured domains as members", async () => {
+    await server.stop();
+    const provider = new TestIdentityProvider({
+      displayName: "Michael Ramos",
+      email: "ramos@plannotator.ai",
+      emailVerified: true,
+      provider: "test-oidc",
+      subject: "oidc-user-ramos",
+    });
+    server = await startTestServer(installation, {
+      autoAdmitEmailDomains: ["plannotator.ai"],
+      bootstrapAdministratorEmail: "ramos@plannotator.ai",
+      browserAccess: privateTeamBrowserAccess(browserLoginKinds.oidc),
+      interactiveIdentityProvider: provider,
+    });
+    const login = async () => {
+      const started = await fetch(`${server.baseUrl}/auth/login`, {redirect: "manual"});
+      expect(started.status).toBe(302);
+      const callbackUrl = new URL("/auth/callback", server.baseUrl);
+      callbackUrl.searchParams.set("code", provider.authorizationCode);
+      callbackUrl.searchParams.set("state", provider.authorization.state);
+      return fetch(callbackUrl, {
+        headers: {Cookie: loginHandshakeCookie(started)},
+        redirect: "manual",
+      });
+    };
+    const sessionRole = async (completed: Response) => {
+      const cookies = applicationCookies(completed.headers.getSetCookie());
+      const session = await fetch(`${server.baseUrl}/api/v1/session`, {
+        headers: {Cookie: cookies.header},
+      });
+      expect(session.status).toBe(200);
+      return z.object({
+        principal: z.object({membershipRole: z.enum(["administrator", "member"])}),
+      }).parse(await session.json()).principal.membershipRole;
+    };
+
+    // The bootstrap administrator still becomes the first administrator.
+    const first = await login();
+    expect(first.status).toBe(303);
+    expect(await sessionRole(first)).toBe("administrator");
+
+    // A colleague on the configured domain is admitted as a plain member.
+    provider.identity = {
+      ...provider.identity,
+      displayName: "Priya Natarajan",
+      email: "Priya.Natarajan@Plannotator.AI",
+      subject: "oidc-user-natarajan",
+    };
+    const colleague = await login();
+    expect(colleague.status).toBe(303);
+    expect(await sessionRole(colleague)).toBe("member");
+
+    // A verified identity outside the domain is still refused.
+    provider.identity = {
+      ...provider.identity,
+      displayName: "Outside Person",
+      email: "outside@example.test",
+      subject: "outside-user",
+    };
+    expect((await login()).status).toBe(403);
+
+    // An unverified email on the domain is still refused.
+    provider.identity = {
+      ...provider.identity,
+      displayName: "Unverified Colleague",
+      email: "unverified@plannotator.ai",
+      emailVerified: false,
+      subject: "oidc-user-unverified",
+    };
+    expect((await login()).status).toBe(403);
+  });
+
   test("external login reports a malformed verified identity as a typed conflict", async () => {
     await server.stop();
     const provider = new TestIdentityProvider({

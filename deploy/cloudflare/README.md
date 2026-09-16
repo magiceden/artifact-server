@@ -138,6 +138,12 @@ the deployment process resolves the referenced secret into
 `ARTIFACT_SERVER_OIDC_CLIENT_SECRET` before it runs Alchemy. The configuration
 document contains only the stable secret reference, never the secret value.
 
+`autoAdmitEmailDomains` is optional. When set, a person whose login provider
+returns a verified email on one of those domains is admitted as a member on
+first sign-in, so an administrator does not have to pre-admit every colleague.
+Administrators are still created only through the bootstrap email or explicit
+admission. Leave it out to keep the closed-installation default.
+
 For Cloudflare Access setup and verification, read
 [`Use Cloudflare Access for sign-in`](https://artifactserver.com/docs/deploy/cloudflare-access/).
 The checked-in starting configuration is

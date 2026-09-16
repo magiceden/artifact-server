@@ -109,6 +109,7 @@ const dnsZoneIds = Schema.Struct({
 
 const sharedInputFields = {
   applicationDomain: hostname,
+  autoAdmitEmailDomains: Schema.optionalKey(Schema.Array(hostname)),
   backupRetentionDays: Schema.Int.check(
     Schema.isBetween({minimum: 7, maximum: 35}),
   ),
