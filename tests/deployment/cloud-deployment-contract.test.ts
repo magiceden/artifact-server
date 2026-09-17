@@ -161,6 +161,34 @@ describe("shared cloud deployment contract", () => {
     expect(failure).toMatchObject({reason: "invalid_input"});
   });
 
+  test("accepts Cloudflare Access identity settings only as a complete pair without WorkOS", async () => {
+    const accepted = await Effect.runPromise(parseCloudDeploymentInput(cloudflareInput({
+      cloudflareAccessAud: "0123456789abcdef0123456789abcdef",
+      cloudflareAccessTeamDomain: "team.cloudflareaccess.com",
+    })));
+    expect(accepted).toMatchObject({
+      cloudflareAccessAud: "0123456789abcdef0123456789abcdef",
+      cloudflareAccessTeamDomain: "team.cloudflareaccess.com",
+    });
+
+    const rejected = await Promise.all([
+      cloudflareInput({cloudflareAccessAud: "0123456789abcdef0123456789abcdef"}),
+      cloudflareInput({cloudflareAccessTeamDomain: "team.cloudflareaccess.com"}),
+      cloudflareInput({
+        cloudflareAccessAud: "0123456789abcdef0123456789abcdef",
+        cloudflareAccessTeamDomain: "team.example.com",
+      }),
+      cloudflareInput({
+        cloudflareAccessAud: "0123456789abcdef0123456789abcdef",
+        cloudflareAccessTeamDomain: "team.cloudflareaccess.com",
+        workosApiKeySecretRef: "cloudflare-secrets-store://artifact-server-workos",
+        workosClientId: "client_01",
+        workosIssuer: "https://team.authkit.app",
+      }),
+    ].map((input) => Effect.runPromise(parseCloudDeploymentInput(input).pipe(Effect.flip))));
+    expect(rejected.every((failure) => failure.reason === "invalid_input")).toBe(true);
+  });
+
   test("accepts exact secret-free outputs and binds URLs to the requested stack", async () => {
     const input = await Effect.runPromise(parseCloudDeploymentInput(awsInput()));
     const parsed = await Effect.runPromise(parseCloudDeploymentOutput(

@@ -29,6 +29,22 @@ describe("Cloudflare deployment manifest", () => {
     });
   });
 
+  it("passes Cloudflare Access identity settings to the Worker only when configured", () => {
+    const without = buildCloudflareDeploymentManifest(validDeploymentInput);
+    expect(without.runtimeConfiguration).not.toHaveProperty(
+      "ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD",
+    );
+    const withAccess = buildCloudflareDeploymentManifest({
+      ...validDeploymentInput,
+      cloudflareAccessAud: "0123456789abcdef0123456789abcdef",
+      cloudflareAccessTeamDomain: "team.cloudflareaccess.com",
+    });
+    expect(withAccess.runtimeConfiguration).toMatchObject({
+      ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD: "0123456789abcdef0123456789abcdef",
+      ARTIFACT_SERVER_CLOUDFLARE_ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
+    });
+  });
+
   it("preserves required ownership tags over operator tags", () => {
     const manifest = buildCloudflareDeploymentManifest({
       ...validDeploymentInput,

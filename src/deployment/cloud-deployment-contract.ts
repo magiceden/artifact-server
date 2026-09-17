@@ -29,6 +29,12 @@ const email = Schema.String.check(
   Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/u),
   Schema.isMaxLength(320),
 );
+const cloudflareAccessAud = Schema.String.check(
+  Schema.isPattern(/^[a-f0-9]{16,128}$/u),
+);
+const cloudflareAccessTeamDomain = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/u),
+);
 const installationName = Schema.String.check(
   Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u),
 );
@@ -110,6 +116,8 @@ const dnsZoneIds = Schema.Struct({
 const sharedInputFields = {
   applicationDomain: hostname,
   autoAdmitEmailDomains: Schema.optionalKey(Schema.Array(hostname)),
+  cloudflareAccessAud: Schema.optionalKey(cloudflareAccessAud),
+  cloudflareAccessTeamDomain: Schema.optionalKey(cloudflareAccessTeamDomain),
   backupRetentionDays: Schema.Int.check(
     Schema.isBetween({minimum: 7, maximum: 35}),
   ),
@@ -271,6 +279,25 @@ export const CloudDeploymentInput = uncheckedCloudDeploymentInput.check(
       input.workosClientId,
       input.workosIssuer,
     ].map((value) => value !== undefined);
+    const accessPresence = [
+      input.cloudflareAccessAud,
+      input.cloudflareAccessTeamDomain,
+    ].map((value) => value !== undefined);
+    if (accessPresence.some((present) => present !== accessPresence[0])) {
+      issues.push({
+        issue: "Cloudflare Access team domain and AUD tag must be configured together",
+        path: ["cloudflareAccessAud"],
+      });
+    }
+    if (
+      accessPresence.every((present) => present) &&
+      workOsPresence.some((present) => present)
+    ) {
+      issues.push({
+        issue: "WorkOS and Cloudflare Access identity settings are mutually exclusive",
+        path: ["cloudflareAccessAud"],
+      });
+    }
     if (workOsPresence.some((present) => present !== workOsPresence[0])) {
       issues.push({
         issue: "WorkOS issuer, client, and secret reference must be configured together",

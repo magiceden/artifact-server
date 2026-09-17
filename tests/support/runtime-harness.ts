@@ -86,6 +86,7 @@ export async function startTestServer(
     readonly autoAdmitEmailDomains?: ReadonlyArray<string> | undefined;
     readonly bootstrapAdministratorEmail?: string;
     readonly browserAccess?: BrowserAccess;
+    readonly cloudflareAccessVerifier?: ExternalMcpBearerVerifier | undefined;
     readonly contentDomain?: string;
     readonly apiOAuthResource?: ApiOAuthResourceConfiguration;
     readonly clock?: Clock;
@@ -111,6 +112,7 @@ export async function startTestServer(
     apiToken: installation.apiToken,
     autoAdmitEmailDomains: options.autoAdmitEmailDomains,
     browserAccess: options.browserAccess ?? localOwnerBrowserAccess,
+    cloudflareAccessVerifier: options.cloudflareAccessVerifier,
     bootstrapAdministratorEmail: options.bootstrapAdministratorEmail ??
       "administrator@example.test",
     contentDomain: options.contentDomain ?? "localhost",

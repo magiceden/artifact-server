@@ -144,6 +144,33 @@ first sign-in, so an administrator does not have to pre-admit every colleague.
 Administrators are still created only through the bootstrap email or explicit
 admission. Leave it out to keep the closed-installation default.
 
+### Cloudflare Access as the only identity layer
+
+Instead of using Access as an OIDC provider, a self-hosted Access application
+can front the Worker and Access **managed OAuth** can serve MCP clients. The
+Worker then trusts the signed `Cf-Access-Jwt-Assertion` Access attaches to
+every authenticated request, for the browser, the HTTP API, and MCP alike:
+
+```json
+{
+  "cloudflareAccessTeamDomain": "YOUR_TEAM.cloudflareaccess.com",
+  "cloudflareAccessAud": "THE_ACCESS_APPLICATION_AUD_TAG"
+}
+```
+
+With both fields set and no `oidc*` fields, `/auth/login` admits the person the
+assertion names and issues the application session directly; there is no
+redirect and no second login. With `oidc*` fields also present, browser login
+stays on OIDC and the assertion is accepted only for the API and MCP, which is
+the safe intermediate state during a rollout. WorkOS and Cloudflare Access
+identity are mutually exclusive.
+
+Cookie-less requests that carry an assertion are authenticated by it; Artifact
+Server managed API keys keep precedence, so service callers add an Access
+service token at the edge and their API key as before. Browser requests keep
+the session-and-CSRF path. Access service-token assertions name no person and
+are rejected by the verifier.
+
 For Cloudflare Access setup and verification, read
 [`Use Cloudflare Access for sign-in`](https://artifactserver.com/docs/deploy/cloudflare-access/).
 The checked-in starting configuration is

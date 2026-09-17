@@ -85,6 +85,8 @@ export interface LocalRuntimeConfig {
   readonly autoAdmitEmailDomains?: ReadonlyArray<string> | undefined;
   readonly bootstrapAdministratorEmail?: string;
   readonly browserAccess: BrowserAccess;
+  /** Cloudflare Access assertion verifier for browser, API, and MCP identity. */
+  readonly cloudflareAccessVerifier?: ExternalMcpBearerVerifier | undefined;
   readonly clock?: Clock;
   readonly completedRequestLogSampleRate?: number;
   readonly contentDomain: string;
@@ -223,8 +225,10 @@ export async function createLocalRuntime(
     clock: runtimeClock,
     dispatches: repository,
     externalApiBearerVerifier: config.externalApiBearerVerifier ?? null,
+    externalApiOAuthVerifier: config.cloudflareAccessVerifier ?? null,
     externalMcpBearerVerifier: config.externalMcpBearerVerifier ?? null,
-    externalMcpOAuthVerifier: config.externalMcpOAuthVerifier ?? null,
+    externalMcpOAuthVerifier: config.externalMcpOAuthVerifier ??
+      config.cloudflareAccessVerifier ?? null,
     ids: new SystemIdGenerator(),
     identityRepository,
     installationId,
@@ -291,6 +295,7 @@ export async function createLocalRuntime(
       applicationRuntime,
       blobs,
       browserAccess: config.browserAccess,
+      cloudflareAccessVerifier: config.cloudflareAccessVerifier,
       completedRequestLogSampleRate:
         config.completedRequestLogSampleRate ??
           defaultCompletedRequestLogSampleRate,

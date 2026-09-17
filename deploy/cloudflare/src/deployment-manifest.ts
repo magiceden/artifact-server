@@ -41,6 +41,8 @@ export interface CloudflareDeploymentManifest {
     readonly ARTIFACT_SERVER_CONTENT_DOMAIN: string;
     readonly ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL: string;
     ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS?: string;
+    ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD?: string;
+    ARTIFACT_SERVER_CLOUDFLARE_ACCESS_TEAM_DOMAIN?: string;
     readonly ARTIFACT_SERVER_HOST: "0.0.0.0";
     readonly ARTIFACT_SERVER_PORT: 8787;
     readonly ARTIFACT_SERVER_REQUEST_LOG_SAMPLE_RATE: number;
@@ -72,6 +74,15 @@ export const buildCloudflareDeploymentManifest = (
   ) {
     runtimeConfiguration.ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS =
       input.autoAdmitEmailDomains.join(",");
+  }
+  if (
+    input.cloudflareAccessAud !== undefined &&
+    input.cloudflareAccessTeamDomain !== undefined
+  ) {
+    runtimeConfiguration.ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD =
+      input.cloudflareAccessAud;
+    runtimeConfiguration.ARTIFACT_SERVER_CLOUDFLARE_ACCESS_TEAM_DOMAIN =
+      input.cloudflareAccessTeamDomain;
   }
   const applicationName = input.stage.startsWith("probe-")
     ? "probe-artifact-server"

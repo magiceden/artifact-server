@@ -18,12 +18,13 @@ import {
 } from "../application/application-runtime.js";
 import { StagedUploadService } from "../application/staged-upload.js";
 import { AuthenticationService } from "../application/authentication.js";
+import type {ExternalMcpBearerVerifier} from "../application/authentication.js";
 import {
   digestIdentitySecret,
   identitySecretsEqual,
   InstallationAccessService,
 } from "../application/installation-access.js";
-import { InteractiveLoginService } from "../application/interactive-login.js";
+import { InteractiveLoginService, safeReturnTo } from "../application/interactive-login.js";
 import { ProjectManagementService } from "../application/project-management.js";
 import {ProjectGitHistoryService} from
   "../application/project-git-history.js";
@@ -81,6 +82,7 @@ import {
 import type { IssuedApplicationSession } from "../core/installation-identity.js";
 import {
   browserAccessModes,
+  browserLoginKinds,
   type BrowserAccess,
 } from "../core/browser-access.js";
 import {
@@ -435,6 +437,7 @@ const issueApiKeySchema = z.object({
 const localLoginQuerySchema = z.object({
   token: z.string().min(32).max(200),
 });
+const cloudflareAccessAssertionHeader = "cf-access-jwt-assertion";
 const interactiveLoginQuerySchema = z.object({
   returnTo: z.string().max(1_024).default("/api/v1/session"),
 });
@@ -474,6 +477,12 @@ export interface HttpAppDependencies {
   readonly blobs: BlobStore;
   /** Browser authentication policy fixed by the deployment entrypoint. */
   readonly browserAccess: BrowserAccess;
+  /**
+   * Verifies the assertion Cloudflare Access attaches to requests it has
+   * authenticated. Required when `browserAccess.loginKind` is
+   * `cloudflare_access`; the edge is then the only login screen.
+   */
+  readonly cloudflareAccessVerifier?: ExternalMcpBearerVerifier | undefined;
   readonly completedRequestLogSampleRate: number;
   readonly contentDomain: string;
   /** Server-only credential accepted from the co-launched Vite proxy. */
@@ -983,6 +992,35 @@ export function createHttpApp(
 
   app.get("/auth/login", async (context) => {
     const query = interactiveLoginQuerySchema.parse(context.req.query());
+    if (dependencies.browserAccess.loginKind === browserLoginKinds.cloudflareAccess) {
+      const verifier = dependencies.cloudflareAccessVerifier;
+      if (verifier === undefined) {
+        throw new Error("Cloudflare Access browser login requires its verifier.");
+      }
+      const assertion = context.req.header(cloudflareAccessAssertionHeader);
+      if (assertion === undefined || assertion.trim() === "") {
+        throw new AuthenticationRequired({
+          message: "Cloudflare Access did not authenticate this request.",
+        });
+      }
+      const credential = Redacted.make(assertion.trim(), {
+        label: "cloudflare-access-assertion",
+      });
+      const issued = await runHttpApplicationEffect(
+        context,
+        dependencies,
+        InstallationAccessService.use((access) =>
+          verifier.verify(credential).pipe(
+            Effect.flatMap((verified) => verifier.resolveIdentity(verified)),
+            Effect.flatMap((identity) => access.completeExternalIdentity(identity)),
+          )
+        ),
+      );
+      setApplicationSessionCookies(context, dependencies, issued);
+      context.header("Cache-Control", "private, no-store");
+      context.header("Referrer-Policy", "no-referrer");
+      return context.redirect(safeReturnTo(query.returnTo), 303);
+    }
     const started = await runHttpApplicationEffect(
       context,
       dependencies,
@@ -994,6 +1032,9 @@ export function createHttpApp(
   });
 
   app.get("/auth/callback", async (context) => {
+    if (dependencies.browserAccess.loginKind === browserLoginKinds.cloudflareAccess) {
+      return context.notFound();
+    }
     const query = interactiveCallbackSchema.parse(context.req.query());
     const handshake = getCookie(
       context,

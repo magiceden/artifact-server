@@ -7,6 +7,7 @@ export const browserAccessModes = {
 /** Interactive login mechanisms disclosed to the management application. */
 export const browserLoginKinds = {
   localOwner: "local_owner",
+  cloudflareAccess: "cloudflare_access",
   oidc: "oidc",
   workOs: "workos",
 } as const;
@@ -25,6 +26,7 @@ export type BrowserAccess =
   }
   | {
     readonly loginKind:
+      | typeof browserLoginKinds.cloudflareAccess
       | typeof browserLoginKinds.oidc
       | typeof browserLoginKinds.workOs;
     readonly mode: typeof browserAccessModes.privateTeam;
@@ -39,6 +41,7 @@ export const localOwnerBrowserAccess: BrowserAccess = {
 /** Create the browser access policy for a remotely deployed private team. */
 export function privateTeamBrowserAccess(
   loginKind:
+    | typeof browserLoginKinds.cloudflareAccess
     | typeof browserLoginKinds.oidc
     | typeof browserLoginKinds.workOs,
 ): Extract<BrowserAccess, {readonly mode: "private_team"}> {

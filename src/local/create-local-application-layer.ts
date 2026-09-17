@@ -151,6 +151,12 @@ export interface ApplicationAdapters {
   readonly externalMcpBearerVerifier: BearerCredentialVerifier | null;
   readonly externalMcpOAuthVerifier: ExternalMcpBearerVerifier | null;
   /**
+   * Accepts the same externally issued identity tokens on the HTTP API that
+   * `externalMcpOAuthVerifier` accepts on MCP. Set when one authorization
+   * server covers both resources, as Cloudflare Access does.
+   */
+  readonly externalApiOAuthVerifier?: ExternalMcpBearerVerifier | null | undefined;
+  /**
    * Agent-dispatch persistence. Every backend implements the dispatch tables,
    * so omitting the slot is a compile error rather than a runtime failure.
    */
@@ -902,10 +908,40 @@ export function createApplicationLayer(
           return installationAccess.authenticateManagedApiKey(credential);
         }
         if (externalVerifier !== null) return externalVerifier.verify(credential);
+        const oauthVerifier = adapters.externalApiOAuthVerifier ?? null;
+        if (oauthVerifier !== null) {
+          return authenticateExternalOAuth(oauthVerifier, credential).pipe(
+            Effect.map((authenticated) => authenticated.principal),
+          );
+        }
         return Effect.fail(new AuthenticationRequired({
           message: "A valid Artifact Server API key is required.",
         }));
       };
+      const authenticateExternalOAuth = Effect.fn(
+        "AuthenticationService.authenticateExternalOAuth",
+      )(function*(
+        verifier: ExternalMcpBearerVerifier,
+        credential: Redacted.Redacted,
+      ) {
+        const verified = yield* verifier.verify(credential);
+        let principal = yield* installationAccess.authenticateExternalSubject(
+          verified.provider,
+          verified.subject,
+        );
+        if (principal === null) {
+          const identity = yield* verifier.resolveIdentity(verified);
+          principal = yield* installationAccess.authenticateExternalIdentity(identity);
+        }
+        return {
+          clientId: verified.clientId ?? verified.subject,
+          expiresAt: verified.expiresAt,
+          principal,
+          // The exact resource-bound audience grants access to this MCP
+          // endpoint. WorkOS does not issue a separate product scope.
+          scopes: ["mcp"],
+        };
+      });
       const authenticateMcpBearer = Effect.fn(
         "AuthenticationService.authenticateMcpBearer",
       )(function*(credential: Redacted.Redacted) {
@@ -943,23 +979,7 @@ export function createApplicationLayer(
             message: "A valid Artifact Server MCP credential is required.",
           }));
         }
-        const verified = yield* verifier.verify(credential);
-        let principal = yield* installationAccess.authenticateExternalSubject(
-          verified.provider,
-          verified.subject,
-        );
-        if (principal === null) {
-          const identity = yield* verifier.resolveIdentity(verified);
-          principal = yield* installationAccess.authenticateExternalIdentity(identity);
-        }
-        return {
-          clientId: verified.clientId ?? verified.subject,
-          expiresAt: verified.expiresAt,
-          principal,
-          // The exact resource-bound audience grants access to this MCP
-          // endpoint. WorkOS does not issue a separate product scope.
-          scopes: ["mcp"],
-        };
+        return yield* authenticateExternalOAuth(verifier, credential);
       });
       return Effect.succeed(AuthenticationService.of({
         authenticateApiBearer: authenticateBearerWith(
