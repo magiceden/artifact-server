@@ -64,6 +64,7 @@ export interface McpHttpAdapterDependencies {
   readonly linkedArtifacts?: boolean;
   readonly mode: ArtifactMcpServerDependencies["mode"];
   readonly oauthResource: string | null;
+  readonly uploadAuthentication?: ArtifactMcpServerDependencies["uploadAuthentication"];
 }
 
 /** Stateless MCP HTTP adapter mounted by every Artifact Server deployment. */
@@ -90,6 +91,7 @@ export function createMcpHttpAdapter(
         linkedArtifacts: dependencies.linkedArtifacts === true,
         mode: dependencies.mode,
         requestId: requestIdFrom(context.requestInfo),
+        uploadAuthentication: dependencies.uploadAuthentication ?? "bearer",
       };
       return createArtifactMcpServer(
         serverDependencies,

@@ -212,6 +212,44 @@ describe("Cloudflare Access identity", () => {
     const mcpBody = await mcp.text();
     expect(mcp.status).toBe(200);
     expect(mcpBody).toContain("\"result\"");
+    expect(mcpBody).toContain("no Authorization header");
+    expect(mcpBody).not.toContain("using the same bearer credential");
+
+    const capabilities = await fetch(`${server.baseUrl}/mcp`, {
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: {},
+          name: "artifact_capabilities",
+          _meta: {
+            [CLIENT_CAPABILITIES_META_KEY]: {},
+            [CLIENT_INFO_META_KEY]: {name: "artifact-server-test", version: "1"},
+            [PROTOCOL_VERSION_META_KEY]: protocolVersion,
+          },
+        },
+      }),
+      headers: {
+        "Accept": "application/json, text/event-stream",
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": protocolVersion,
+        "Mcp-Method": "tools/call",
+        "Mcp-Name": "artifact_capabilities",
+      },
+      method: "POST",
+    });
+    expect(capabilities.status).toBe(200);
+    const capabilitiesBody = z.object({
+      result: z.object({
+        structuredContent: z.object({
+          publishing: z.object({uploadAuthentication: z.string()}),
+        }),
+      }),
+    }).parse(await capabilities.json());
+    expect(capabilitiesBody.result.structuredContent.publishing.uploadAuthentication)
+      .toBe("network_edge");
 
     const mcpUnauthenticated = await fetch(`${server.baseUrl}/mcp`, {
       body: JSON.stringify({id: 1, jsonrpc: "2.0", method: "server/discover", params: {}}),
