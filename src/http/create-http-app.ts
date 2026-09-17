@@ -566,6 +566,9 @@ export function createHttpApp(
     linkedArtifacts: dependencies.linkedArtifacts === true,
     mode: dependencies.trustedApplicationOrigin === null ? "local" : "remote",
     oauthResource: dependencies.mcpOAuthResource?.resource ?? null,
+    uploadAuthentication: dependencies.cloudflareAccessVerifier === undefined
+      ? "bearer"
+      : "identity_aware_proxy",
   });
   const boundedJsonBody = bodyLimit({
     maxSize: maximumJsonRequestBytes,

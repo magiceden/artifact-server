@@ -383,7 +383,18 @@ export interface ArtifactMcpServerDependencies {
   readonly linkedArtifacts?: boolean;
   readonly mode: "local" | "remote";
   readonly requestId: string;
+  /**
+   * How upload URLs are authenticated. `bearer`: the client repeats its MCP
+   * credential. `identity_aware_proxy`: an identity-aware proxy in front of the server
+   * (Cloudflare Access with WARP identity) authenticates the upload request
+   * itself, so the client sends no credential.
+   */
+  readonly uploadAuthentication?: UploadAuthentication;
 }
+
+export type UploadAuthentication = "bearer" | "identity_aware_proxy";
+
+const uploadAuthenticationSchema = z.enum(["bearer", "identity_aware_proxy"]);
 
 function runMcpApplicationEffect<A, E>(
   dependencies: ArtifactMcpServerDependencies,
@@ -420,7 +431,10 @@ export function createArtifactMcpServer(
         "server/discover": {cacheScope: "private", ttlMs: 60_000},
         "tools/list": {cacheScope: "private", ttlMs: 60_000},
       },
-      instructions: agentInstructions(dependencies.mode),
+      instructions: agentInstructions(
+        dependencies.mode,
+        dependencies.uploadAuthentication ?? "bearer",
+      ),
     },
   );
 
@@ -602,6 +616,7 @@ export function createArtifactMcpServer(
           localPathTool: z.literal(false),
           maximumDeclaredFiles: z.number(),
           maximumUploadPlanRequestBytes: z.number(),
+          uploadAuthentication: uploadAuthenticationSchema,
           workflow: z.array(z.string()),
         }),
         linkedArtifacts: z.object({available: z.boolean()}),
@@ -616,6 +631,7 @@ export function createArtifactMcpServer(
     () => successResult(
       capabilities(
         dependencies.mode,
+        dependencies.uploadAuthentication ?? "bearer",
         dependencies.linkedArtifacts === true,
         dependencies.gitHistory,
       ),
@@ -1204,10 +1220,16 @@ export function createArtifactMcpServer(
         }).strict(),
         expiresAt: z.string(),
         files: z.array(z.object({
-          authorization: z.object({
-            credential: z.literal("reuse_the_mcp_bearer_credential"),
-            scheme: z.literal("Bearer"),
-          }).strict(),
+          authorization: z.union([
+            z.object({
+              credential: z.literal("reuse_the_mcp_bearer_credential"),
+              scheme: z.literal("Bearer"),
+            }).strict(),
+            z.object({
+              credential: z.literal("identity_aware_proxy"),
+              scheme: z.literal("None"),
+            }).strict(),
+          ]),
           method: z.literal("PUT"),
           path: z.string(),
           size: z.number().int().nonnegative(),
@@ -1232,7 +1254,11 @@ export function createArtifactMcpServer(
           })
         ),
       );
-      return uploadPlan(applicationUrl, upload);
+      return uploadPlan(
+        applicationUrl,
+        upload,
+        dependencies.uploadAuthentication ?? "bearer",
+      );
     }),
   );
 
@@ -2319,12 +2345,24 @@ const destructiveWriteAnnotations = {
   readOnlyHint: false,
 } as const;
 
-function agentInstructions(mode: "local" | "remote"): string {
+function uploadAuthorizationDescriptor(uploadAuthentication: UploadAuthentication) {
+  return uploadAuthentication === "identity_aware_proxy"
+    ? {credential: "identity_aware_proxy" as const, scheme: "None" as const}
+    : {credential: "reuse_the_mcp_bearer_credential" as const, scheme: "Bearer" as const};
+}
+
+function agentInstructions(
+  mode: "local" | "remote",
+  uploadAuthentication: UploadAuthentication,
+): string {
+  const uploadCredential = uploadAuthentication === "identity_aware_proxy"
+    ? "PUT the exact bytes to every returned uploadUrl with no Authorization header: this installation authenticates uploads at the network edge (Cloudflare Access with WARP identity), so the request must come from the same WARP-connected machine. Do not look for, ask for, or invent an API key. A 401 or 403 on the PUT means WARP is not connected on this machine; say so instead of retrying with other credentials."
+    : "PUT the exact bytes to every returned uploadUrl using the same bearer credential";
   return [
     "Artifact Server stores actual files as immutable versions. It does not accept inline HTML, CSS, JavaScript, base64, or invented file contents through MCP.",
     "Start with artifact_capabilities when you do not know this installation's limits.",
     "Artifacts belong to projects. Omit projectId only when the installation has one active project; otherwise call project_list and choose explicitly.",
-    "For publishing, inspect the selected file or finished directory on the client, compute each relative path, byte length, media type, and SHA-256 fingerprint, call artifact_create_upload, PUT the exact bytes to every returned uploadUrl using the same bearer credential, then call artifact_commit_upload.",
+    `For publishing, inspect the selected file or finished directory on the client, compute each relative path, byte length, media type, and SHA-256 fingerprint, call artifact_create_upload, ${uploadCredential}, then call artifact_commit_upload.`,
     "After publishing, always give the user links.review first so they can see the exact version full screen and comment. Mention links.version second when the raw artifact is useful. Do not put content bootstrap URLs or credentials in chat.",
     "When publishing a new version, first call artifact_get and pass its current version ID as expectedCurrentVersionId. On conflict, inspect the new current version before retrying.",
     "Use a stable application idempotency key when retrying the same mutation. Use a new key only for an intentional new operation.",
@@ -2340,6 +2378,7 @@ function agentInstructions(mode: "local" | "remote"): string {
 
 function capabilities(
   mode: "local" | "remote",
+  uploadAuthentication: UploadAuthentication,
   linkedArtifacts: boolean,
   gitHistory: GitHistoryCapability,
 ) {
@@ -2364,10 +2403,13 @@ function capabilities(
       localPathTool: false as const,
       maximumDeclaredFiles,
       maximumUploadPlanRequestBytes,
+      uploadAuthentication,
       workflow: [
         "Inspect one actual file or finished directory on the client.",
         "Call artifact_create_upload with portable file metadata.",
-        "Upload each exact file to its returned uploadUrl.",
+        uploadAuthentication === "identity_aware_proxy"
+          ? "Upload each exact file to its returned uploadUrl with no Authorization header from the WARP-connected client machine."
+          : "Upload each exact file to its returned uploadUrl with the same bearer credential.",
         "Call artifact_commit_upload with an idempotency key and optimistic version when updating.",
         "Inspect the returned immutable version and browser links.",
       ],
@@ -2386,6 +2428,7 @@ function capabilities(
 function uploadPlan(
   applicationUrl: URL,
   upload: StagedUpload,
+  uploadAuthentication: UploadAuthentication,
 ) {
   return {
     commit: {
@@ -2394,10 +2437,7 @@ function uploadPlan(
     },
     expiresAt: upload.expiresAt,
     files: upload.files.map((file) => ({
-      authorization: {
-        credential: "reuse_the_mcp_bearer_credential" as const,
-        scheme: "Bearer" as const,
-      },
+      authorization: uploadAuthorizationDescriptor(uploadAuthentication),
       method: "PUT" as const,
       path: file.entry.path,
       size: file.entry.size,
