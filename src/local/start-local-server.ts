@@ -10,7 +10,7 @@ import {createGracefulHttpShutdown} from
 import {withNodeResponseCompression} from
   "../http/node-response-compression.js";
 import {createRuntimeLifecycle} from "../lifecycle/runtime-readiness.js";
-import {browserAccessModes} from "../core/browser-access.js";
+import {browserAccessModes, browserLoginKinds} from "../core/browser-access.js";
 
 const loopbackHostname = "127.0.0.1";
 const serverAddressSchema = z.object({
@@ -37,6 +37,16 @@ export async function startLocalServer(
 ): Promise<RunningLocalServer> {
   if (
     config.browserAccess.mode === browserAccessModes.privateTeam
+    && config.browserAccess.loginKind === browserLoginKinds.cloudflareAccess
+    && config.cloudflareAccessVerifier === undefined
+  ) {
+    throw new Error(
+      "Cloudflare Access browser login requires its assertion verifier.",
+    );
+  }
+  if (
+    config.browserAccess.mode === browserAccessModes.privateTeam
+    && config.browserAccess.loginKind !== browserLoginKinds.cloudflareAccess
     && config.interactiveIdentityProvider === undefined
   ) {
     throw new Error(

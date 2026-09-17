@@ -31,6 +31,8 @@ export type AuthenticationFailure =
 export interface VerifiedExternalMcpBearer {
   readonly clientId: string | null;
   readonly expiresAt: number;
+  /** Identity already carried by the token, so no provider lookup is needed. */
+  readonly identity?: ExternalIdentity | undefined;
   readonly provider: string;
   readonly scopes: readonly string[];
   readonly subject: string;

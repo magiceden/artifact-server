@@ -43,6 +43,9 @@ import {
   defaultOidcScopes,
   type OidcIdentityProvider,
 } from "../../../src/identity/oidc-identity-provider.js";
+import {CloudflareAccessVerifier} from
+  "../../../src/identity/cloudflare-access-verifier.js";
+import {liftCloudflareAccessAssertion} from "./cloudflare-access-request.js";
 import {createWorkOsHostedAuthentication} from
   "../../../src/identity/workos-hosted-authentication.js";
 
@@ -53,6 +56,8 @@ export interface WorkerEnvironment {
   readonly ARTIFACT_SERVER_API_TOKEN: string;
   readonly ARTIFACT_SERVER_AUTO_ADMIT_EMAIL_DOMAINS?: string;
   readonly ARTIFACT_SERVER_BOOTSTRAP_ADMIN_EMAIL: string;
+  readonly ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD?: string;
+  readonly ARTIFACT_SERVER_CLOUDFLARE_ACCESS_TEAM_DOMAIN?: string;
   readonly ARTIFACT_SERVER_CONTENT_DOMAIN: string;
   readonly ARTIFACT_SERVER_CLOUDFLARE_ARTIFACTS_ACCOUNT_ID?: string;
   readonly ARTIFACT_SERVER_CLOUDFLARE_ARTIFACTS_NAMESPACE?: string;
@@ -74,6 +79,7 @@ export interface WorkerEnvironment {
 interface CloudflareRuntime {
   readonly app: ReturnType<typeof createHttpApp>;
   readonly applicationHostname: string;
+  readonly cloudflareAccess: boolean;
   readonly contentDomain: string;
   readonly qualificationMode: boolean;
   cleanupStaging(): Promise<void>;
@@ -95,7 +101,10 @@ export default {
   ): Promise<Response> {
     try {
       const runtime = await getRuntime(environment);
-      const prepared = prepareRequest(request, runtime);
+      const routed = prepareRequest(request, runtime);
+      const prepared = routed !== null && runtime.cloudflareAccess
+        ? liftCloudflareAccessAssertion(routed)
+        : routed;
       if (prepared === null) {
         return jsonResponse(421, {
           error: "unrecognized_artifact_server_host",
@@ -161,10 +170,13 @@ async function createCloudflareRuntime(
   const gitHistory = await initializeGitHistory(environment, repository, blobs);
   const oidcIdentityProvider = oidcAuthentication(environment);
   const hostedAuthentication = await workOsAuthentication(environment);
+  const accessVerifier = cloudflareAccessAuthentication(environment);
   const browserAccess = hostedAuthentication !== null
     ? privateTeamBrowserAccess(browserLoginKinds.workOs)
     : oidcIdentityProvider !== null
     ? privateTeamBrowserAccess(browserLoginKinds.oidc)
+    : accessVerifier !== null
+    ? privateTeamBrowserAccess(browserLoginKinds.cloudflareAccess)
     : missingIdentityProvider();
   const applicationAdapters: Parameters<typeof createApplicationLayer>[0] = {
     apiToken: Redacted.make(environment.ARTIFACT_SERVER_API_TOKEN, {
@@ -179,9 +191,10 @@ async function createCloudflareRuntime(
     clock: new SystemClock(),
     dispatches: repository,
     externalApiBearerVerifier: null,
+    externalApiOAuthVerifier: accessVerifier,
     externalMcpBearerVerifier: null,
     externalMcpOAuthVerifier:
-      hostedAuthentication?.externalMcpOAuthVerifier ?? null,
+      hostedAuthentication?.externalMcpOAuthVerifier ?? accessVerifier,
     ids: new SystemIdGenerator(),
     identityRepository,
     installationId: environment.ARTIFACT_SERVER_INSTALLATION_ID,
@@ -206,6 +219,7 @@ async function createCloudflareRuntime(
     applicationRuntime,
     blobs,
     browserAccess,
+    cloudflareAccessVerifier: accessVerifier ?? undefined,
     completedRequestLogSampleRate: requestLogSampleRate(environment),
     contentDomain: environment.ARTIFACT_SERVER_CONTENT_DOMAIN,
     gitHistory: gitHistory.capability,
@@ -239,6 +253,7 @@ async function createCloudflareRuntime(
       }
     },
     drainGitHistory: gitHistory.drain,
+    cloudflareAccess: accessVerifier !== null,
     contentDomain: environment.ARTIFACT_SERVER_CONTENT_DOMAIN,
     qualificationMode:
       environment.ARTIFACT_SERVER_QUALIFICATION_MODE === "enabled",
@@ -417,8 +432,22 @@ function requireEnvironmentValue(value: string | undefined): string {
 
 function missingIdentityProvider(): never {
   throw new Error(
-    "A private-team server requires exactly one OIDC or WorkOS browser-login provider.",
+    "A private-team server requires one browser-login provider: OIDC, WorkOS, or Cloudflare Access.",
   );
+}
+
+function cloudflareAccessAuthentication(
+  environment: WorkerEnvironment,
+): CloudflareAccessVerifier | null {
+  const audience = environment.ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD;
+  const teamDomain = environment.ARTIFACT_SERVER_CLOUDFLARE_ACCESS_TEAM_DOMAIN;
+  if (audience === undefined && teamDomain === undefined) return null;
+  if (audience === undefined || teamDomain === undefined) {
+    throw new Error(
+      "Cloudflare Access identity requires both the team domain and the application AUD tag.",
+    );
+  }
+  return new CloudflareAccessVerifier({audience, teamDomain});
 }
 
 function prepareRequest(
@@ -464,6 +493,14 @@ function validateEnvironment(environment: WorkerEnvironment): void {
   ) {
     throw new Error(
       "One installation has one browser-login provider: configure ARTIFACT_SERVER_WORKOS_* or ARTIFACT_SERVER_OIDC_*, not both.",
+    );
+  }
+  if (
+    workOsValues(environment).some((value) => value !== undefined) &&
+    environment.ARTIFACT_SERVER_CLOUDFLARE_ACCESS_AUD !== undefined
+  ) {
+    throw new Error(
+      "WorkOS and Cloudflare Access identity are mutually exclusive.",
     );
   }
 }
