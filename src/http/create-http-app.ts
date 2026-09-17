@@ -568,7 +568,7 @@ export function createHttpApp(
     oauthResource: dependencies.mcpOAuthResource?.resource ?? null,
     uploadAuthentication: dependencies.cloudflareAccessVerifier === undefined
       ? "bearer"
-      : "network_edge",
+      : "identity_aware_proxy",
   });
   const boundedJsonBody = bodyLimit({
     maxSize: maximumJsonRequestBytes,

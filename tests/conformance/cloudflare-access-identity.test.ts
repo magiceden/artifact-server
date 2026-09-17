@@ -249,7 +249,7 @@ describe("Cloudflare Access identity", () => {
       }),
     }).parse(await capabilities.json());
     expect(capabilitiesBody.result.structuredContent.publishing.uploadAuthentication)
-      .toBe("network_edge");
+      .toBe("identity_aware_proxy");
 
     const mcpUnauthenticated = await fetch(`${server.baseUrl}/mcp`, {
       body: JSON.stringify({id: 1, jsonrpc: "2.0", method: "server/discover", params: {}}),
