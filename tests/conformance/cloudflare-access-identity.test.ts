@@ -212,7 +212,8 @@ describe("Cloudflare Access identity", () => {
     const mcpBody = await mcp.text();
     expect(mcp.status).toBe(200);
     expect(mcpBody).toContain("\"result\"");
-    expect(mcpBody).toContain("no Authorization header");
+    expect(mcpBody).toContain("cloudflared access token");
+    expect(mcpBody).not.toContain("no Authorization header");
     expect(mcpBody).not.toContain("using the same bearer credential");
 
     const capabilities = await fetch(`${server.baseUrl}/mcp`, {

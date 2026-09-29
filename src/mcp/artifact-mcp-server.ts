@@ -386,8 +386,8 @@ export interface ArtifactMcpServerDependencies {
   /**
    * How upload URLs are authenticated. `bearer`: the client repeats its MCP
    * credential. `identity_aware_proxy`: an identity-aware proxy in front of the server
-   * (Cloudflare Access with WARP identity) authenticates the upload request
-   * itself, so the client sends no credential.
+   * (Cloudflare Access) guards the upload request, and the client sends its own
+   * Access token (`cloudflared access token`) as a bearer credential.
    */
   readonly uploadAuthentication?: UploadAuthentication;
 }
@@ -1226,8 +1226,8 @@ export function createArtifactMcpServer(
               scheme: z.literal("Bearer"),
             }).strict(),
             z.object({
-              credential: z.literal("identity_aware_proxy"),
-              scheme: z.literal("None"),
+              credential: z.literal("cloudflared_access_token"),
+              scheme: z.literal("Bearer"),
             }).strict(),
           ]),
           method: z.literal("PUT"),
@@ -2347,7 +2347,7 @@ const destructiveWriteAnnotations = {
 
 function uploadAuthorizationDescriptor(uploadAuthentication: UploadAuthentication) {
   return uploadAuthentication === "identity_aware_proxy"
-    ? {credential: "identity_aware_proxy" as const, scheme: "None" as const}
+    ? {credential: "cloudflared_access_token" as const, scheme: "Bearer" as const}
     : {credential: "reuse_the_mcp_bearer_credential" as const, scheme: "Bearer" as const};
 }
 
@@ -2356,7 +2356,7 @@ function agentInstructions(
   uploadAuthentication: UploadAuthentication,
 ): string {
   const uploadCredential = uploadAuthentication === "identity_aware_proxy"
-    ? "PUT the exact bytes to every returned uploadUrl with no Authorization header: this installation authenticates uploads at the network edge (Cloudflare Access with WARP identity), so the request must come from the same WARP-connected machine. Do not look for, ask for, or invent an API key. A 401 or 403 on the PUT means WARP is not connected on this machine; say so instead of retrying with other credentials."
+    ? "PUT the exact bytes to every returned uploadUrl with the header `Authorization: Bearer <token>`, where <token> is the output of `cloudflared access token -app=<origin of the uploadUrl>`. If that prints nothing, run `cloudflared access login <origin of the uploadUrl>` once (it opens the user's browser for Okta), then fetch the token again. The machine must have WARP connected. Do not send the token as a cookie, and do not look for, ask for, or invent an API key. On a 401, refresh the token with `cloudflared access login` and retry once; if it still fails, report the response body"
     : "PUT the exact bytes to every returned uploadUrl using the same bearer credential";
   return [
     "Artifact Server stores actual files as immutable versions. It does not accept inline HTML, CSS, JavaScript, base64, or invented file contents through MCP.",
@@ -2408,7 +2408,7 @@ function capabilities(
         "Inspect one actual file or finished directory on the client.",
         "Call artifact_create_upload with portable file metadata.",
         uploadAuthentication === "identity_aware_proxy"
-          ? "Upload each exact file to its returned uploadUrl with no Authorization header from the WARP-connected client machine."
+          ? "Upload each exact file to its returned uploadUrl with `Authorization: Bearer $(cloudflared access token -app=<origin>)` from the WARP-connected client machine."
           : "Upload each exact file to its returned uploadUrl with the same bearer credential.",
         "Call artifact_commit_upload with an idempotency key and optimistic version when updating.",
         "Inspect the returned immutable version and browser links.",
